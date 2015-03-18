@@ -60,6 +60,8 @@ public:
   // 32-bit number of seconds since Y2K epoch (2000-01-01)
   uint32_t getY2KEpoch() const;
 
+  void addToString(String & str) const;
+
 private:
   uint8_t       conv1d(const char * txt);
   uint8_t       conv2d(const char * txt);
@@ -83,6 +85,8 @@ public:
   void setPowerSwitchedOnOff(bool x) { _onoffMethod = onoff_mbili_jp2; }
   void setDiag(Stream &stream) { _diagStream = &stream; }
   void setDiag(Stream *stream) { _diagStream = stream; }
+
+  void setSkipCGATT(bool x=true)        { _skipCGATT = x; }
 
   void setMinSignalQuality(int q) { _minSignalQuality = q; }
 
@@ -138,6 +142,7 @@ public:
   bool getCLIR(char *buffer, size_t buflen);
   bool getCOLP(char *buffer, size_t buflen);
   bool getCOPS(char *buffer, size_t buflen);
+  bool setCCLK(const SIMDateTime & dt);
   bool getCCLK(char *buffer, size_t buflen);
   bool getCSPN(char *buffer, size_t buflen);
   bool getCGID(char *buffer, size_t buflen);
@@ -154,6 +159,11 @@ public:
   bool sendCommandWaitForOK(const char *cmd, uint16_t timeout=4000);
   bool sendCommandWaitForOK(const String & cmd, uint16_t timeout=4000);
   bool sendCommandWaitForOK_P(const char *cmd, uint16_t timeout=4000);
+
+  // Using CCLK, get 32-bit number of seconds since Unix epoch (1970-01-01)
+  uint32_t getUnixEpoch() const;
+  // Using CCLK, get 32-bit number of seconds since Y2K epoch (2000-01-01)
+  uint32_t getY2KEpoch() const;
 
 private:
   void initProlog(Stream &stream);
@@ -180,6 +190,7 @@ private:
   void sendCommandAdd(char c);
   void sendCommandAdd(int i);
   void sendCommandAdd(const char *cmd);
+  void sendCommandAdd(const String & cmd);
   void sendCommandAdd_P(const char *cmd);
   void sendCommandEpilog();
 
@@ -197,6 +208,8 @@ private:
 
   // Small utility to see if we timed out
   bool isTimedOut(uint32_t ts) { return (long)(millis() - ts) >= 0; }
+
+  const char * skipWhiteSpace(const char * txt);
 
   bool sendFTPdata_low(uint8_t *buffer, size_t size);
   bool sendFTPdata_low(uint8_t (*read)(), size_t size);
@@ -219,6 +232,7 @@ private:
   bool _transMode;
   bool _echoOff;
   enum onoffKind _onoffMethod;
+  bool _skipCGATT;
 };
 
 extern GPRSbeeClass gprsbee;

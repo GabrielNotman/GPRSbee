@@ -122,6 +122,7 @@ void GPRSbeeClass::initProlog(Stream &stream)
   _transMode = false;
   _echoOff = false;
   _onoffMethod = onoff_toggle;
+  _skipCGATT = false;
 }
 
 bool GPRSbeeClass::on()
@@ -239,17 +240,19 @@ void GPRSbeeClass::offSwitchMbiliJP2()
  */
 void GPRSbeeClass::onSwitchNdogoSIM800()
 {
-  diagPrintLn(F("on powerPin, vbatPin"));
-  // First PWRKEY HIGH
-  digitalWrite(_powerPin, HIGH);
-  // Wait a little
-  // TODO Figure out if this is really needed
-  delay(2);
-  digitalWrite(_vbatPin, HIGH);
-  // Should be instant
-  // Let's wait, but how long?
-  mydelay(2500);
-  digitalWrite(_powerPin, LOW);
+  if (!isOn()) {
+    diagPrintLn(F("on powerPin, vbatPin"));
+    // First PWRKEY HIGH
+    digitalWrite(_powerPin, HIGH);
+    // Wait a little
+    // TODO Figure out if this is really needed
+    delay(2);
+    digitalWrite(_vbatPin, HIGH);
+    // Should be instant
+    // Let's wait, but how long?
+    mydelay(2500);
+    digitalWrite(_powerPin, LOW);
+  }
 }
 
 /*!
@@ -257,14 +260,16 @@ void GPRSbeeClass::onSwitchNdogoSIM800()
  */
 void GPRSbeeClass::offSwitchNdogoSIM800()
 {
-  diagPrintLn(F("off vbatPin"));
-  // TODO We could do a toggle and let the device do a
-  // graceful shutdown.
-  // offToggle()
-  digitalWrite(_vbatPin, LOW);
-  // Should be instant
-  // Let's wait a little, but not too long
-  mydelay(50);
+  if (isOn()) {
+    diagPrintLn(F("off vbatPin"));
+    // TODO We could do a toggle and let the device do a
+    // graceful shutdown.
+    // offToggle()
+    digitalWrite(_vbatPin, LOW);
+    // Should be instant
+    // Let's wait a little, but not too long
+    mydelay(50);
+  }
 }
 
 bool GPRSbeeClass::isOn()
@@ -542,6 +547,11 @@ void GPRSbeeClass::sendCommandAdd(int i)
   _myStream->print(i);
 }
 void GPRSbeeClass::sendCommandAdd(const char *cmd)
+{
+  diagPrint(cmd);
+  _myStream->print(cmd);
+}
+void GPRSbeeClass::sendCommandAdd(const String & cmd)
 {
   diagPrint(cmd);
   _myStream->print(cmd);
@@ -848,7 +858,7 @@ bool GPRSbeeClass::openTCP(const char *apn, const char *apnuser, const char *apn
 
   // Attach to GPRS service
   // We need a longer timeout than the normal waitForOK
-  if (!sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
+  if (!_skipCGATT && !sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
     goto cmd_error;
   }
 
@@ -953,7 +963,7 @@ bool GPRSbeeClass::isTCPConnected()
 {
   uint32_t ts_max;
   bool retval = false;
-  char *ptr;
+  const char *ptr;
 
   if (!isOn()) {
     goto end;
@@ -982,9 +992,7 @@ bool GPRSbeeClass::isTCPConnected()
     goto end;
   }
   ptr = _SIM900_buffer + 6;
-  while (*ptr != '\0' && *ptr == ' ') {
-    ++ptr;
-  }
+  ptr = skipWhiteSpace(ptr);
   // Look at the state
   if (strcmp_P(ptr, PSTR("CONNECT OK")) != 0) {
     goto end;
@@ -1092,7 +1100,7 @@ bool GPRSbeeClass::openFTP(const char *apn, const char *apnuser, const char *apn
 
   // Attach to GPRS service
   // We need a longer timeout than the normal waitForOK
-  if (!sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
+  if (!_skipCGATT && !sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
     goto cmd_error;
   }
 
@@ -1151,6 +1159,7 @@ bool GPRSbeeClass::closeFTP()
 bool GPRSbeeClass::openFTPfile(const char *fname, const char *path)
 {
   char cmd[64];
+  const char * ptr;
   int retry;
   uint32_t ts_max;
 
@@ -1178,16 +1187,27 @@ bool GPRSbeeClass::openFTPfile(const char *fname, const char *path)
       // +FTPPUT:1,66      <= this is an error (operation not allowed)
       // This can take a while ...
       ts_max = millis() + 30000;
-      if (!waitForMessage_P(PSTR("+FTPPUT:1,"), ts_max)) {
+      if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
         // Try again.
         isAlive();
         continue;
       }
-      if (strncmp_P(_SIM900_buffer + 10, PSTR("1,"), 2) != 0) {
+      // Skip 8 for "+FTPPUT:"
+      ptr = _SIM900_buffer + 8;
+      ptr = skipWhiteSpace(ptr);
+      if (strncmp_P(ptr, PSTR("1,"), 2) != 0) {
         // We did NOT get "+FTPPUT:1,1,", it might be an error.
         goto ending;
       }
-      _ftpMaxLength = strtoul(_SIM900_buffer + 12, NULL, 0);
+      ptr += 2;
+
+      if (strncmp_P(ptr, PSTR("1,"), 2) != 0) {
+        // We did NOT get "+FTPPUT:1,1,", it might be an error.
+        goto ending;
+      }
+      ptr += 2;
+
+      _ftpMaxLength = strtoul(ptr, NULL, 0);
 
       break;
     }
@@ -1221,7 +1241,7 @@ bool GPRSbeeClass::closeFTPfile()
    */
   // +FTPPUT:1,0
   uint32_t ts_max = millis() + 20000;
-  if (!waitForMessage_P(PSTR("+FTPPUT:1,"), ts_max)) {
+  if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
     // How bad is it if we ignore this
     //diagPrintLn(F("Timeout while waiting for +FTPPUT:1,"));
   }
@@ -1249,7 +1269,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t *buffer, size_t size)
 
   ts_max = millis() + 10000;
   // +FTPPUT:2,22
-  if (!waitForMessage_P(PSTR("+FTPPUT:2,"), ts_max)) {
+  if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
     // How bad is it if we ignore this
     return false;
   }
@@ -1273,7 +1293,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t *buffer, size_t size)
   // The SIM900 informs again what the new max length is
   ts_max = millis() + 4000;
   // +FTPPUT:1,1,1360
-  if (!waitForMessage_P(PSTR("+FTPPUT:1,"), ts_max)) {
+  if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
     // How bad is it if we ignore this?
     // It informs us about the _ftpMaxLength
   }
@@ -1284,6 +1304,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t *buffer, size_t size)
 bool GPRSbeeClass::sendFTPdata_low(uint8_t (*read)(), size_t size)
 {
   char cmd[20];         // Should be enough for "AT+FTPPUT=2,<num>"
+  const char * ptr;
   uint32_t ts_max;
 
   // Send some data
@@ -1294,7 +1315,14 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t (*read)(), size_t size)
 
   ts_max = millis() + 10000;
   // +FTPPUT:2,22
-  if (!waitForMessage_P(PSTR("+FTPPUT:2,"), ts_max)) {
+  if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
+    ptr = _SIM900_buffer + 8;
+    if (strncmp_P(ptr, PSTR("2,"), 2) != 0) {
+      // We did NOT get "+FTPPUT:2,", it might be an error.
+      return false;
+    }
+    ptr += 2;
+    // TODO Check for the number
     // How bad is it if we ignore this
     return false;
   }
@@ -1317,7 +1345,7 @@ bool GPRSbeeClass::sendFTPdata_low(uint8_t (*read)(), size_t size)
   // The SIM900 informs again what the new max length is
   ts_max = millis() + 30000;
   // +FTPPUT:1,1,1360
-  if (!waitForMessage_P(PSTR("+FTPPUT:1,"), ts_max)) {
+  if (!waitForMessage_P(PSTR("+FTPPUT:"), ts_max)) {
     // How bad is it if we ignore this?
     // It informs us about the _ftpMaxLength
   }
@@ -1554,7 +1582,7 @@ bool GPRSbeeClass::doHTTPprolog(const char *apn, const char *apnuser, const char
 
   // Attach to GPRS service
   // We need a longer timeout than the normal waitForOK
-  if (!sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
+  if (!_skipCGATT && !sendCommandWaitForOK_P(PSTR("AT+CGATT=1"), 30000)) {
     goto ending;
   }
 
@@ -1659,9 +1687,7 @@ bool GPRSbeeClass::doHTTPACTION(char num)
     // The 12 is the length of "+HTTPACTION:"
     // We then have to skip the digit and the comma
     const char *ptr = _SIM900_buffer + 12;
-    while (*ptr != '\0' && *ptr == ' ') {
-      ++ptr;
-    }
+    ptr = skipWhiteSpace(ptr);
     ++ptr;              // The digit
     ++ptr;              // The comma
     char *bufend;
@@ -1670,6 +1696,7 @@ bool GPRSbeeClass::doHTTPACTION(char num)
       // Invalid number
       goto ending;
     }
+    // TODO Which result codes are allowed to pass?
     if (replycode == 200) {
       retval = true;
     } else {
@@ -1899,6 +1926,20 @@ bool GPRSbeeClass::getCOPS(char *buffer, size_t buflen)
   return getStrValue_P(PSTR("AT+COPS?"), PSTR("+COPS:"), buffer, buflen, ts_max);
 }
 
+bool GPRSbeeClass::setCCLK(const SIMDateTime & dt)
+{
+  String str;
+  str.reserve(30);
+  dt.addToString(str);
+  switchEchoOff();
+  sendCommandProlog();
+  sendCommandAdd_P(PSTR("AT+CCLK=\""));
+  sendCommandAdd(str);
+  sendCommandAdd('"');
+  sendCommandEpilog();
+  return waitForOK();
+}
+
 bool GPRSbeeClass::getCCLK(char *buffer, size_t buflen)
 {
   switchEchoOff();
@@ -1990,6 +2031,38 @@ void GPRSbeeClass::disableCIURC()
 {
   if (!sendCommandWaitForOK_P(PSTR("AT+CIURC=0"), 6000)) {
   }
+}
+
+const char * GPRSbeeClass::skipWhiteSpace(const char * txt)
+{
+  while (*txt != '\0' && *txt == ' ') {
+    ++txt;
+  }
+  return txt;
+}
+
+uint32_t GPRSbeeClass::getUnixEpoch() const
+{
+  bool status;
+  char buffer[64];
+
+  status = false;
+  for (uint8_t ix = 0; !status && ix < 10; ++ix) {
+    status = gprsbee.on();
+  }
+
+  status = false;
+  for (uint8_t ix = 0; !status && ix < 10; ++ix) {
+    status = gprsbee.getCCLK(buffer, sizeof(buffer));
+  }
+
+  const char * ptr = buffer;
+  if (*ptr == '"') {
+    ++ptr;
+  }
+  SIMDateTime dt = SIMDateTime(ptr);
+
+  return dt.getUnixEpoch();
 }
 
 ////////////////////////////////////////////////////////////////////////////////
@@ -2170,6 +2243,9 @@ uint32_t SIMDateTime::getUnixEpoch() const
   return getY2KEpoch() + 946684800;
 }
 
+/*
+ * \brief Convert a single digit to a number
+ */
 uint8_t SIMDateTime::conv1d(const char * txt)
 {
   uint8_t       val = 0;
@@ -2179,9 +2255,58 @@ uint8_t SIMDateTime::conv1d(const char * txt)
   return val;
 }
 
+/*
+ * \brief Convert two digits to a number
+ */
 uint8_t SIMDateTime::conv2d(const char * txt)
 {
   uint8_t val = conv1d(txt++) * 10;
   val += conv1d(txt);
   return val;
+}
+
+/*
+ * Format an integer as %0*d
+ *
+ * Arduino formatting sucks.
+ */
+static void add0Nd(String &str, uint16_t val, size_t width)
+{
+  if (width >= 5 && val < 10000) {
+    str += '0';
+  }
+  if (width >= 4 && val < 1000) {
+    str += '0';
+  }
+  if (width >= 3 && val < 100) {
+    str += '0';
+  }
+  if (width >= 2 && val < 10) {
+    str += '0';
+  }
+  str += val;
+}
+
+/*
+ * \brief Add to the String the text for the AT+CCLK= command
+ *
+ * The String is expected to already have enough reserved space
+ * so that an out-of-memory is not likely.
+ * The format is "yy/MM/dd,hh:mm:ss±zz"
+ * For the time being the timezone is set to 0 (UTC)
+ */
+void SIMDateTime::addToString(String & str) const
+{
+  add0Nd(str, _yOff, 2);
+  str += '/';
+  add0Nd(str, _m + 1, 2);
+  str += '/';
+  add0Nd(str, _d + 1, 2);
+  str += ',';
+  add0Nd(str, _hh, 2);
+  str += ':';
+  add0Nd(str, _mm, 2);
+  str += ':';
+  add0Nd(str, _ss, 2);
+  str += "+00";
 }
