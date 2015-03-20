@@ -126,6 +126,7 @@ public:
   bool sendTCPRequest(const char *apn, const char *apnuser, const char *apnpwd, const char *server,
 	  int port, const char* TCPRequest, const uint16_t length, const uint8_t maxAttempts = 4);
   bool receiveLineTCP(const char **buffer, uint16_t timeout=4000);
+  bool streamTCPResponse(Stream& stream, uint16_t timeout = 4000);
 
   bool openFTP(const char *apn, const char *server,
       const char *username, const char *password);

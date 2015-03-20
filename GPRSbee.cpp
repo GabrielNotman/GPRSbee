@@ -1121,6 +1121,31 @@ ending:
   return retval;
 }
 
+bool GPRSbeeClass::streamTCPResponse(Stream& stream, uint16_t timeout)
+{
+	//Save and switch off debug stream
+	Stream* diag = _diagStream;
+	_diagStream = NULL;
+
+	bool result = false;
+
+	const char* response = NULL;
+	while (receiveLineTCP(&response, timeout))
+	{
+		result = true;
+
+		if (strlen(response) == SIM900_BUFLEN)
+			stream.print(response);
+		else
+			stream.println(response);
+	}
+
+	//Restore debug stream
+	_diagStream = diag;
+
+	return result;
+}
+
 /*
  * \brief Open a (FTP) session
  */
