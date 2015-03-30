@@ -54,7 +54,9 @@ static inline void mydelay(unsigned long nrMillis)
  * \brief Initialize the instance
  * \param stream - the Stream instance to use to communicate with the SIMx00
  * \param ctsPin - the pin that is connected to the Bee CTS
- * \param powerPin - the pin that is connected to the Bee DTR (used to toggle power of the SIM900)
+ * \param powerPin - the pin that is connected to the Bee DTR
+ *    (used to toggle power of the SIM900)
+ * \param bufferSize - the size of the internal buffer used to read lines from the SIMx00
  *
  * This function does the work that a constructor could have done. But
  * in the Arduino world things are done differently.
@@ -68,9 +70,10 @@ static inline void mydelay(unsigned long nrMillis)
  * 3) the SODAQ Ndogo has a switched VBAT to power the SIM800 and a digital pin to
  * toggle the PWRKEY of the SIM800
  */
-void GPRSbeeClass::init(Stream &stream, int ctsPin, int powerPin)
+void GPRSbeeClass::init(Stream &stream, int ctsPin, int powerPin,
+    int bufferSize)
 {
-  initProlog(stream);
+  initProlog(stream, bufferSize);
 
   if (powerPin >= 0) {
     _powerPin = powerPin;
@@ -85,9 +88,10 @@ void GPRSbeeClass::init(Stream &stream, int ctsPin, int powerPin)
   }
 }
 
-void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int statusPin)
+void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, int statusPin,
+    int bufferSize)
 {
-  initProlog(stream);
+  initProlog(stream, bufferSize);
   _onoffMethod = onoff_ndogo_sim800;
 
   if (pwrkeyPin >= 0) {
@@ -110,8 +114,12 @@ void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, i
   }
 }
 
-void GPRSbeeClass::initProlog(Stream &stream)
+void GPRSbeeClass::initProlog(Stream &stream, int bufferSize)
 {
+  if (_bufSize == 0) {
+    _bufSize = SIM900_DEFAULT_BUFFER_SIZE;
+  }
+  _SIM900_buffer = (char *)malloc(_bufSize);
   _myStream = &stream;
   _diagStream = 0;
   _statusPin = -1;
@@ -328,12 +336,17 @@ void GPRSbeeClass::flushInput()
  */
 int GPRSbeeClass::readLine(uint32_t ts_max)
 {
+  if (_SIM900_buffer == NULL) {
+    return -1;
+  }
+
   uint32_t ts_waitLF = 0;
   bool seenCR = false;
   int c;
+  int bufcnt;
 
   //diagPrintLn(F("readLine"));
-  _SIM900_bufcnt = 0;
+  bufcnt = 0;
   while (!isTimedOut(ts_max)) {
     wdt_reset();
     if (seenCR) {
@@ -359,8 +372,8 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
       goto ok;
     } else {
       // Any other character is stored in the line buffer
-      if (_SIM900_bufcnt < SIM900_BUFLEN) {
-        _SIM900_buffer[_SIM900_bufcnt++] = c;
+      if (bufcnt < (_bufSize + 1)) {    // Leave room for the terminating NUL
+        _SIM900_buffer[bufcnt++] = c;
       }
     }
   }
@@ -369,9 +382,9 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
   return -1;            // This indicates: timed out
 
 ok:
-  _SIM900_buffer[_SIM900_bufcnt] = 0;     // Terminate with NUL byte
+  _SIM900_buffer[bufcnt] = 0;     // Terminate with NUL byte
   //diagPrint(F(" ")); diagPrintLn(_SIM900_buffer);
-  return _SIM900_bufcnt;
+  return bufcnt;
 
 }
 
@@ -688,6 +701,7 @@ bool GPRSbeeClass::getStrValue(const char *cmd, const char *reply, char * str, s
       ++ptr;
     }
     strncpy(str, ptr, size - 1);
+    str[size - 1] = '\0';               // Terminate, just to be sure
     // Wait for "OK"
     return waitForOK();
   }
@@ -705,6 +719,7 @@ bool GPRSbeeClass::getStrValue_P(const char *cmd, const char *reply, char * str,
       ++ptr;
     }
     strncpy(str, ptr, size - 1);
+    str[size - 1] = '\0';               // Terminate, just to be sure
     // Wait for "OK"
     return waitForOK();
   }
@@ -739,6 +754,7 @@ bool GPRSbeeClass::getStrValue(const char *cmd, char * str, size_t size, uint32_
       continue;
     }
     strncpy(str, _SIM900_buffer, size - 1);
+    str[size - 1] = '\0';               // Terminate, just to be sure
     break;
   }
   if (len < 0) {
@@ -1017,7 +1033,7 @@ end:
 /*
  * \brief Send some data over the TCP connection
  */
-bool GPRSbeeClass::sendDataTCP(uint8_t *data, int data_len)
+bool GPRSbeeClass::sendDataTCP(const uint8_t *data, int data_len)
 {
   uint32_t ts_max;
   bool retval = false;
@@ -1439,12 +1455,13 @@ ending:
   return retval;
 }
 
-/*
- * The middle part of the whole HTTP POST
+/*!
+ * \brief The middle part of the whole HTTP POST
  *
- * HTTPPARA with the URL
- * HTTPDATA
- * HTTPACTION
+ * This function does:
+ *  - HTTPPARA with the URL
+ *  - HTTPDATA
+ *  - HTTPACTION(1)
  */
 bool GPRSbeeClass::doHTTPPOSTmiddle(const char *url, const char *buffer, size_t len)
 {
@@ -1493,13 +1510,12 @@ ending:
   return retval;
 }
 
-/*
- * The middle part of the whole HTTP POST, with a READ
+/*!
+ * \brief The middle part of the whole HTTP POST, with a READ
  *
- * HTTPPARA with the URL
- * HTTPDATA
- * HTTPACTION
- * HTTPREAD
+ * This function does:
+ *  - doHTTPPOSTmiddle() ...
+ *  - HTTPREAD
  */
 bool GPRSbeeClass::doHTTPPOSTmiddleWithReply(const char *url, const char *postdata, size_t pdlen, char *buffer, size_t len)
 {
@@ -1521,12 +1537,13 @@ ending:
     return retval;
 }
 
-/*
- * The middle part of the whole HTTP GET
+/*!
+ * \brief The middle part of the whole HTTP GET
  *
- * HTTPPARA with the URL
- * HTTPACTION
- * HTTPREAD
+ * This function does:
+ *  - HTTPPARA with the URL
+ *  - HTTPACTION(0)
+ *  - HTTPREAD
  */
 bool GPRSbeeClass::doHTTPGETmiddle(const char *url, char *buffer, size_t len)
 {
