@@ -361,9 +361,6 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
       // Any other character is stored in the line buffer
       if (_SIM900_bufcnt < SIM900_BUFLEN) {
         _SIM900_buffer[_SIM900_bufcnt++] = c;
-
-        if (_SIM900_bufcnt == SIM900_BUFLEN)
-          goto ok;
       }
     }
   }
