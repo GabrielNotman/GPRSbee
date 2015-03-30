@@ -1052,57 +1052,6 @@ ending:
   return retval;
 }
 
-bool GPRSbeeClass::sendTCPRequest(const char *apn, const char *server, int port, const char* TCPRequest,
-	const uint16_t length, const uint8_t maxAttempts)
-{
-	sendTCPRequest(apn, "", "", server, port, TCPRequest, length, maxAttempts);
-}
-
-bool GPRSbeeClass::sendTCPRequest(const char *apn, const char *apnuser, const char *apnpwd, 
-	const char *server, int port, const char* TCPRequest, const uint16_t length, const uint8_t maxAttempts)
-{
-	diagPrintLn(F("Sending: "));
-	diagPrintLn(TCPRequest);
-
-	//Open connection
-	bool connection = false;
-	bool sent = false;
-
-	uint8_t count = 0;
-	while ((!sent) && (count < maxAttempts))
-	{
-		count++;
-		diagPrintLn(F("Attempting to open TCP connection..."));
-		connection = gprsbee.openTCP(apn, apnuser, apnpwd, server, port);
-
-		if (connection)
-		{
-			diagPrintLn(F("connected"));
-
-			diagPrintLn(F("Sending TCP request..."));
-			sent = gprsbee.sendDataTCP((uint8_t*)TCPRequest, length);
-
-			if (sent)
-			{
-				diagPrintLn(F("sent"));
-			}
-			else
-				diagPrintLn(F("send failed"));
-		}
-		else
-			diagPrintLn(F("connect failed"));
-	}
-
-	if (!sent)
-	{
-		diagPrint(F("Failed after "));
-		diagPrint(maxAttempts);
-		diagPrintLn(F(" attempts"));
-	}
-	return sent;
-}
-
-
 bool GPRSbeeClass::receiveLineTCP(const char **buffer, uint16_t timeout)
 {
   uint32_t ts_max;
