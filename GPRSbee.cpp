@@ -1087,17 +1087,10 @@ bool GPRSbeeClass::sendTCPRequest(const char *apn, const char *apnuser, const ch
 				diagPrintLn(F("sent"));
 			}
 			else
-			{
 				diagPrintLn(F("send failed"));
-				closeTCP();
-			}
 		}
 		else
-		{
 			diagPrintLn(F("connect failed"));
-			closeTCP();
-		}
-
 	}
 
 	if (!sent)
