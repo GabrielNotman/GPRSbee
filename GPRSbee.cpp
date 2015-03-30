@@ -1153,43 +1153,6 @@ bool GPRSbeeClass::streamTCPResponse(Stream& stream, uint16_t timeout)
 	return result;
 }
 
-int16_t GPRSbeeClass::parseTCPResponseCode(const char* statusLine, const uint16_t length)
-{
-	//There should be three words in the status line
-	//HTTP/X.X CODE TEXT
-	char code[4];
-
-	//Find each instance of 'H' see if the rest follows
-	char* httpWord = strchr(statusLine, 'H');
-	while (httpWord)
-	{
-		if (strncmp(httpWord, "HTTP/", 5) == 0)
-			break;
-		else
-			httpWord = strchr(httpWord + 1, 'H');
-	}
-
-	//If not found return -1
-	if (!httpWord)
-		return -1; 
-	
-
-	//Find the first space and second spaces after HTTP/ r
-	char* firstSpace = strchr(httpWord, ' ');
-	char* secondSpace = strchr(firstSpace + 1, ' ');
-
-	//If the
-	if ((firstSpace) && (secondSpace))
-	{
-		strncpy(code, firstSpace + 1, 3);
-		code[3] = '\0';
-
-		return atoi(code);
-	}
-	else
-		return -1;
-}
-
 /*
  * \brief Open a (FTP) session
  */
