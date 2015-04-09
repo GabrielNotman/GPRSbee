@@ -116,9 +116,7 @@ void GPRSbeeClass::initNdogoSIM800(Stream &stream, int pwrkeyPin, int vbatPin, i
 
 void GPRSbeeClass::initProlog(Stream &stream, int bufferSize)
 {
-  if (_bufSize == 0) {
-    _bufSize = SIM900_DEFAULT_BUFFER_SIZE;
-  }
+  _bufSize = bufferSize;
   _SIM900_buffer = (char *)malloc(_bufSize);
   _myStream = &stream;
   _diagStream = 0;
@@ -372,7 +370,7 @@ int GPRSbeeClass::readLine(uint32_t ts_max)
       goto ok;
     } else {
       // Any other character is stored in the line buffer
-      if (bufcnt < (_bufSize + 1)) {    // Leave room for the terminating NUL
+      if (bufcnt < (_bufSize - 1)) {    // Leave room for the terminating NUL
         _SIM900_buffer[bufcnt++] = c;
       }
     }
