@@ -50,6 +50,10 @@
 /*
  * \brief A class to store clock values
  */
+#define UNIX_OFFSET 946684800
+#define Y2K_TO_UNIX(X) (X + UNIX_OFFSET)
+#define UNIX_TO_Y2K(X) (X - UNIX_OFFSET)
+
 class SIMDateTime
 {
 public:
