@@ -2084,6 +2084,30 @@ uint32_t GPRSbeeClass::getUnixEpoch() const
   return dt.getUnixEpoch();
 }
 
+uint32_t GPRSbeeClass::getY2KEpoch() const
+{
+  bool status;
+  char buffer[64];
+
+  status = false;
+  for (uint8_t ix = 0; !status && ix < 10; ++ix) {
+    status = gprsbee.on();
+  }
+
+  status = false;
+  for (uint8_t ix = 0; !status && ix < 10; ++ix) {
+    status = gprsbee.getCCLK(buffer, sizeof(buffer));
+  }
+
+  const char * ptr = buffer;
+  if (*ptr == '"') {
+    ++ptr;
+  }
+  SIMDateTime dt = SIMDateTime(ptr);
+
+  return dt.getY2KEpoch();
+}
+
 ////////////////////////////////////////////////////////////////////////////////
 ////////////////////////////////////////////////////////////////////////////////
 
